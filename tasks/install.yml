@@ -1,0 +1,57 @@
+
+- name: Install Nginx and ssl-cert
+  apt:
+    name:
+      - nginx
+      - ssl-cert
+    state: present
+  register:
+    nginxinstalled
+  delay: 10
+  retries: 12
+  until: nginxinstalled is successful
+
+- name: Install python-passlib for Python 3 hosts
+  apt:
+    name:
+      - "python3-passlib"
+    state: present
+  register:
+    result
+  delay: 10
+  retries: 12
+  until: result is successful
+  when:
+    - ansible_python['version']['major'] == 3
+
+- name: Install python-passlib for Python 2 hosts
+  apt:
+    name:
+      - "python-passlib"
+    state: present
+  register:
+    result
+  delay: 10
+  retries: 12
+  until: result is successful
+  when:
+    - ansible_python['version']['major'] == 2
+
+- name: Set up nginx directories
+  file:
+    path: "/etc/nginx/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0640
+  with_items:
+    - sites-available
+    - sites-enabled
+
+
+- name: Install certbot from repository
+  apt:
+    name: "{{ nginx_revproxy_certbot_packages }}"
+    state: present
+  tags:
+    - letsencrypt

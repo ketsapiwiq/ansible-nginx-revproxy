@@ -1,0 +1,98 @@
+---
+# untested
+
+# - name: Get Active Sites
+#   command: ls -1 /etc/nginx/sites-enabled/
+#   changed_when: "active.stdout_lines != nginx_revproxy_sites.keys()|sort()"
+#   # changed_when: "active.stdout_lines| map('regex_replace', '.conf$') != nginx_revproxy_sites.keys()|sort()"
+#   check_mode: false
+#   register: active
+
+
+# - name:
+#   stat:
+#     path: "/etc/letsencrypt/live/{{ item.key }}/fullchain.pem"
+#     # with: nginx_revproxy_sites
+#   with_dict: "{{nginx_revproxy_sites}}"
+#   register: letsencrypt_certifs
+
+- name: Get installed certs
+  command: ls -1 /etc/letsencrypt/live/
+  register: letsencrypt_certifs
+  check_mode: no
+# - name: Get installed certs
+#   find:
+#     paths: /etc/letsencrypt/live/
+#     file_type: directory
+#   register: letsencrypt_certifs
+#   check_mode: no
+
+- debug:
+    var: letsencrypt_certifs
+
+- name: Add HTTP Config for challenge if cert is not installed
+  template:
+    src: certbot.conf.j2
+    dest: "/etc/nginx/sites-enabled/{{ item.key }}_http.conf"
+    owner: root
+    group: root
+    mode: 0640
+  notify: Reload Nginx
+  with_dict: "{{ nginx_revproxy_sites }}"
+  when:
+    - item.value.letsencrypt | default(False)
+    - item.key not in letsencrypt_certifs.stdout_lines
+
+# - name: Add Https Site Config with snakeoil cert
+#     template:
+#     src: reverseproxy_ssl.conf.j2
+#     dest: /etc/nginx/sites-available/{{ item.key }}.conf
+#     owner: root
+#     group: root
+#     mode: 0640
+#     with_dict: "{{ nginx_revproxy_sites }}"
+#     vars:
+#     __skip_letsencrypt: true  # use snakeoil cert on first run
+#     register: siteconfig
+#     when:
+#     - item.value.letsencrypt | default(False)
+#     - item.key not in letsencrypt.stdout_lines
+#     - item.value.custom_template is not defined
+
+- name: Generate certs (first time)
+  command: |
+    certbot certonly
+    --webroot -w /var/www/{{ item.key }}
+    -d {{ item.value.domains | join(' -d ') }}
+    --email {{ item.value.letsencrypt_email }}
+    --non-interactive --cert-name {{ item.key }}
+    --agree-tos creates=/etc/letsencrypt/live/{{ item.key }}/fullchain.pem
+  with_dict: "{{ nginx_revproxy_sites }}"
+  when:
+    - item.value.letsencrypt | default(False)
+    - item.key not in letsencrypt_certifs.stdout_lines
+  tags:
+    - letsencrypt_gen_cert
+    - letsencrypt
+
+- name: Delete HTTP Config for challenge after cert is installed
+  file:
+    path: /etc/nginx/sites-enabled/{{ item.key }}_http.conf
+    owner: root
+    state: absent
+    group: root
+    mode: 0640
+  with_dict: "{{ nginx_revproxy_sites }}"
+  when:
+    - item.value.letsencrypt | default(False)
+    - item.key not in letsencrypt_certifs.stdout_lines
+  notify: Reload Nginx
+
+- name: Insert cert-bot renew in crontab
+  cron:
+    name: "cert-bot renew"
+    job: "certbot \
+      renew --post-hook \"systemctl reload nginx\" >> /var/log/letsencrypt/letsencrypt-update.log 2>&1"
+    hour: "3"
+    minute: "30"
+    weekday: "1"

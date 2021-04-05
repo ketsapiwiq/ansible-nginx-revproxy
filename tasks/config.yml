@@ -1,0 +1,106 @@
+- name: Add Site Config
+  template:
+    src: reverseproxy.conf.j2
+    dest: /etc/nginx/sites-available/{{ item.key }}.conf
+    owner: root
+    group: root
+    mode: 0640
+  with_dict: "{{ nginx_revproxy_sites }}"
+#   register:
+#     siteconfig
+  when:
+    - not item.value.ssl | default(True)
+    - not item.value.letsencrypt | default(True)
+    - item.value.custom_template is not defined
+
+
+- name: Get installed certs
+  command: ls -1 /etc/letsencrypt/live/
+  register: letsencrypt_certifs
+  check_mode: no
+
+- name: Add Https Site Config
+  template:
+    src: reverseproxy_ssl.conf.j2
+    dest: /etc/nginx/sites-available/{{ item.key }}.conf
+    owner: root
+    group: root
+    mode: 0640
+  with_dict: "{{ nginx_revproxy_sites }}"
+  register:
+    siteconfig
+  when:
+    # - item.key in letsencrypt_certifs.stdout_lines
+    - item.key in letsencrypt_certifs.stdout
+    - item.value.ssl | default(False)
+    - not item.value.letsencrypt | default(True)
+    - item.value.custom_template is not defined
+
+- name: debug siteconfig
+  debug:
+    msg: "{{ siteconfig }}"
+
+- name: Add Custom Site Config
+  template:
+    src: "{{ item.value.custom_template }}.conf.j2"
+    dest: /etc/nginx/sites-available/{{ item.key }}.conf
+    owner: root
+    group: root
+    mode: 0640
+  with_dict: "{{ nginx_revproxy_sites }}"
+  when:
+    - item.value.custom_template is defined | default(False)
+  tags:
+    - nginxrevproxy_add_custom_config
+  notify: Reload Nginx
+
+- name: Get Active Sites
+  command: ls -1 /etc/nginx/sites-enabled/
+  changed_when: "active.stdout_lines != nginx_revproxy_sites.keys()|sort()"
+  # changed_when: "active.stdout_lines | map('regex_replace', '.conf$') != nginx_revproxy_sites.keys()|sort()"
+  check_mode: false
+  register: active
+
+# - name: De-activate Sites
+#   file:
+#     path: /etc/nginx/sites-enabled/{{ item }}
+#     # path: /etc/nginx/sites-enabled/{{ item }}.conf
+#     state: absent
+#   with_items: "{{ active.stdout_lines }}"
+#   notify: Reload Nginx
+#   when:
+#     - item not in nginx_revproxy_sites
+#     - nginx_disable_configs
+#   tags:
+#     - nginxrevproxy
+
+
+# TODO: enable definitely only if nginx -t du file fonctionne
+- name: Enable Site Config
+  file:
+    src: /etc/nginx/sites-available/{{ item.key }}.conf
+    dest: /etc/nginx/sites-enabled/{{ item.key }}
+    # dest: /etc/nginx/sites-enabled/{{ item.key }}.conf
+    state: link
+    # force: yes
+  with_dict: "{{ nginx_revproxy_sites }}"
+#   This should test conf first
+#   notify: Reload Nginx
+  when:
+    # - siteconfig is success
+    - not item.value.letsencrypt | default(True)
+  ignore_errors: "{{ ansible_check_mode }}"
+  tags:
+    - nginxrevproxy
+
+
+- name: Copy maintenance page
+  template:
+    src: maintenance.html.j2
+    dest: /var/www/{{ item.key }}/maintenance.html
+    owner: www-data
+    group: www-data
+  with_dict: "{{ nginx_revproxy_sites }}"
+  tags:
+    - nginx_maintenance
+  when: item.value.custom_template is defined and item.value.custom_template == "odoo"

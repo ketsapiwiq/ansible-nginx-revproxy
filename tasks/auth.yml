@@ -1,0 +1,13 @@
+
+
+- name: Add authentication
+  htpasswd:
+    path: "/etc/nginx/{{ item.key }}_htpasswd"
+    name: "{{ item.value.auth.login }}"
+    password: "{{ item.value.auth.password }}"
+    owner: root
+    group: www-data
+    mode: 0640
+  with_dict: "{{ nginx_revproxy_sites }}"
+  when:
+    - item.value.auth is defined

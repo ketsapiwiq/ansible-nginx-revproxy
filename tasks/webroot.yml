@@ -1,0 +1,37 @@
+
+- name: Create WebRoot sites
+  file:
+    dest: /var/www/{{ item.key }}/.well-known
+    mode: 0775
+    state: directory
+    owner: www-data
+    group: www-data
+  with_dict: "{{ nginx_revproxy_sites }}"
+  # notify: Reload Nginx
+
+- name: WebRoot Permissions Sites
+  file:
+    dest: /var/www/{{ item.key }}
+    mode: 0775
+    state: directory
+    owner: www-data
+    group: www-data
+    recurse: true
+  with_dict: "{{ nginx_revproxy_sites }}"
+
+- name: Get WebRoot Sites
+  command: ls -1 /var/www/
+  changed_when: "webroot.stdout_lines != nginx_revproxy_sites.keys()|sort()"
+  check_mode: false
+  register: webroot
+
+# - name: Remove WebRoot Sites
+#   file:
+#     path: /var/www/{{ item }}/
+#     state: absent
+#   with_items: "{{ webroot.stdout_lines }}"
+#   # notify: Reload Nginx
+#   when:
+#     - item not in nginx_revproxy_sites
+#   tags:
+#     - nginxrevproxy

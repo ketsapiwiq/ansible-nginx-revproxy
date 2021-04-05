@@ -1,0 +1,13 @@
+---
+
+- include_tasks: install.yml
+
+- include_tasks: auth.yml
+
+- include_tasks: webroot.yml
+
+- include_tasks: letsencrypt.yml
+  tags:
+    - letsencrypt
+
+- include_tasks: config.yml

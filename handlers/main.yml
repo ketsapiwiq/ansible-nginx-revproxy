@@ -1,0 +1,40 @@
+---
+
+- name: Start Nginx
+  service:
+    name: nginx
+    state: started
+
+# TODO: Add handlers from https://github.com/nginxinc/ansible-role-nginx/blob/main/handlers/main.yml to test config before reloading...
+- name: (Handler) Check NGINX
+  command: nginx -t
+  register: config_check
+#   ignore_errors: yes
+  check_mode: no
+  changed_when: false
+  listen:
+  - Reload Nginx
+  - Restart Nginx
+
+# TODO: Add handlers from https://github.com/nginxinc/ansible-role-nginx/blob/main/handlers/main.yml to test config before reloading...
+- name: (Handler) Print NGINX error if syntax check fails
+  debug:
+    var: config_check.stderr_lines
+  failed_when: config_check.rc != 0
+  when:
+    - config_check.stderr_lines is defined
+    - config_check.rc != 0
+  listen:
+  - Reload Nginx
+  - Restart Nginx
+
+- name: Reload Nginx configuration
+  service:
+    name: nginx
+    state: reloaded
+  listen: Reload Nginx
+
+- name: Restart Nginx configuration
+  service:
+    name: nginx
+    state: restarted
